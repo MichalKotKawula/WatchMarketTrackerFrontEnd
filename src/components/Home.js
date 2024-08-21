@@ -9,6 +9,7 @@ const Home = () => {
   const [userInput, setUserInput] = useState('');
   const [brandInput, setBrandInput] = useState('');
   const [modelInput, setModelInput] = useState('');
+  const [isChatVisible, setIsChatVisible] = useState(true);
   const [brandModelWatches, setBrandModelWatches] = useState([]);
   const [averagePriceBrandModel, setAveragePriceBrandModel] = useState('');
   const [chartData, setChartData] = useState([]);
@@ -19,6 +20,63 @@ const Home = () => {
   const [degree, setDegree] = useState(2);
   const [percentageChange, setPercentageChange] = useState('');
   const [isPositiveChange, setIsPositiveChange] = useState(null);
+  const [brandData, setBrandData] = useState({});
+  const [brands] = useState([
+    'Rolex',
+    'IWC',
+    'Omega',
+    'Breitling',
+    'Panerai',
+    'TAG Heuer',
+    'Zenith',
+    'Audemars Piguet',
+    'Cartier',
+    'Patek Philippe',
+    'Jaeger-LeCoultre'
+  ]);
+
+  const toggleChatVisibility = () => {
+    setIsChatVisible(!isChatVisible);
+  };
+
+  useEffect(() => {
+    const fetchBrandData = async (brand) => {
+      try {
+        const response = await axios.get(`https://watchdetailsbackend.netlify.app/.netlify/functions/server/getBrandWatchData`, {
+          params: { brand },
+        });
+        return response.data;
+      } catch (error) {
+        console.error(`Error fetching data for brand ${brand}:`, error);
+        return [];
+      }
+    };
+
+    const loadAllBrandData = async () => {
+      const data = {};
+      for (const brand of brands) {
+        const brandData = await fetchBrandData(brand);
+
+        const filteredData = brandData.filter(watch => {
+          const date = new Date(watch.creationDate);
+          return !isNaN(date); 
+        });
+
+        const prices = filteredData.map(watch => parseFloat(watch.price_formated));
+        const dates = filteredData.map(watch => {
+          const date = new Date(watch.creationDate);
+          return date.toISOString().split('T')[0];
+        });
+
+        data[brand] = { prices, dates };
+      }
+      setBrandData(data);
+    };
+
+    loadAllBrandData();
+  }, [brands]);
+
+  const sanitizeBrandName = (brand) => brand.replace(/\s+/g, '-'); 
 
   const fetchPredictions = async (prices) => {
     try {
@@ -43,10 +101,9 @@ const Home = () => {
 
   const loadPredictions = async (watches) => {
     const prices = watches.map(watch => ({
-      ds: new Date(watch.creationDate).toISOString().split('T')[0], // Convert to ISO date string
-      y: parseFloat(watch.price_formated) // Ensure price is a float
+      ds: new Date(watch.creationDate).toISOString().split('T')[0],
+      y: parseFloat(watch.price_formated) 
     }));
-    console.log('Prepared prices data for prediction:', prices);
     const predictions = await fetchPredictions(prices);
     setPredictedChartData([['Price', ...predictions.map(pred => pred.yhat)]]);
     setPredictedChartXData(predictions.map(pred => pred.ds));
@@ -105,7 +162,7 @@ const Home = () => {
     const watches = await fetchWatchesByBrandAndModel(brandInput, modelInput);
     setBrandModelWatches(watches);
     const prices = watches.map(watch => parseFloat(watch.price_formated));
-    const dates = watches.map(watch => new Date(watch.creationDate).toISOString().split('T')[0]); // Ensure date is in ISO format
+    const dates = watches.map(watch => new Date(watch.creationDate).toISOString().split('T')[0]); 
     const avgPrice = prices.reduce((acc, curr) => acc + curr, 0) / prices.length;
     setAveragePriceBrandModel(`Average Price: ${avgPrice.toFixed(2)}`);
 
@@ -114,12 +171,11 @@ const Home = () => {
 
     calculatePercentageChange(prices, dates);
 
-    // Call predictions after loading watch details by brand and model
     loadPredictions(watches);
   };
 
   const saveWatchDetails = async () => {
-    const creationDate = new Date().getTime(); // Get current date and time in milliseconds
+    const creationDate = new Date().getTime(); 
     const updatedDetails = watchDetails.map(detail => ({ ...detail, creationDate }));
 
     try {
@@ -179,7 +235,47 @@ const Home = () => {
 
   return (
     <div className="container">
-      <h1>Watch Details</h1>
+
+
+
+<div id="brandDataCharts" className="row">
+        {brands.map((brand, index) => (
+          <div key={index} className="col-md-4 mb-4">
+            <h3>{brand}</h3>
+            {brandData[brand] && brandData[brand].prices.length > 0 ? (
+              <Chart
+                data={[['Price', ...brandData[brand].prices]]}
+                xData={brandData[brand].dates}
+                bindto={`#${sanitizeBrandName(brand)}-chart`}
+                type="line"
+                xType="timeseries"
+                axisX={{
+                  type: 'timeseries',
+                  tick: {
+                    format: '%Y-%m-%d',
+                    rotate: 75,
+                    multiline: false,
+                  },
+                  height: 130,
+                }}
+                axisY={{
+                  label: 'Price',
+                }}
+              />
+            ) : (
+              <p>No data available for {brand}</p>
+            )}
+          </div>
+        ))}
+      </div>
+
+
+
+
+
+
+
+      {/* <h1>Watch Details</h1>
       <div className="mb-3">
         <textarea
           className="form-control"
@@ -202,25 +298,40 @@ const Home = () => {
             <p>Price: {detail.price_formated}</p>
           </div>
         ))}
+      </div> */}
+    <div className="container">
+      <div id="chatContainer" className={isChatVisible ? '' : 'minimized'}>
+        <div className="chat-title-bar">
+          <h2>Watch Chatbot</h2>
+          <button className="toggle-icon" onClick={toggleChatVisibility}>
+            {isChatVisible ? '-' : '+'}
+          </button>
+        </div>
+        {isChatVisible && (
+          <>
+            <div className="chatbox">
+              {chatMessages.map((msg, index) => (
+                <div key={index} className={msg.sender === 'user' ? 'text-right' : 'text-left'}>
+                  <div className={msg.sender === 'user' ? 'alert alert-primary' : 'alert alert-secondary'}>{msg.text}</div>
+                </div>
+              ))}
+            </div>
+            <div className="input-group chat-input">
+              <textarea
+                className="form-control"
+                value={userInput}
+                onChange={(e) => setUserInput(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="Describe your preferences..."
+              ></textarea>
+              <button className="btn send-button" onClick={sendMessage}></button>
+            </div>
+          </>
+        )}
       </div>
-      <h2>Watch Recommendation Chatbot</h2>
-      <div id="chatContainer" className="chatbox">
-        {chatMessages.map((msg, index) => (
-          <div key={index} className={msg.sender === 'user' ? 'text-right' : 'text-left'}>
-            <div className={msg.sender === 'user' ? 'alert alert-primary' : 'alert alert-secondary'}>{msg.text}</div>
-          </div>
-        ))}
-      </div>
-      <div className="input-group chat-input">
-        <textarea
-          className="form-control"
-          value={userInput}
-          onChange={(e) => setUserInput(e.target.value)}
-          onKeyPress={handleKeyPress}
-          placeholder="Describe your preferences..."
-        ></textarea>
-        <button className="btn send-button" onClick={sendMessage}></button>
-      </div>
+
+      {/* Other components and sections of the Home page can go here */}
+    </div>
       <div className="form-group">
         <h2>Filter Watches</h2>
         <label htmlFor="brandInput">Brand:</label>
@@ -347,6 +458,10 @@ const Home = () => {
           />
         </>
       )}
+
+
+     
+
     </div>
   );
 };
